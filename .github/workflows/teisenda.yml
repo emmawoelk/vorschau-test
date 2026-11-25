@@ -1,0 +1,58 @@
+# .github/workflows/teisenda.yml — TEISENDA Hosting, with the values of your website.
+#
+# Every push deploys its branch: the production branch goes live, every other branch becomes its
+# preview, and the pull request of the branch gets one comment. A closed pull request and a deleted
+# branch remove the previews. Signed in with the job's OIDC token: no secret in this repository.
+name: TEISENDA Hosting
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    types: [closed]
+  delete:
+
+permissions:
+  contents: read
+  # The OIDC token for TEISENDA (no secret in the repository).
+  id-token: write
+  # The commit status and the comment on the pull request.
+  statuses: write
+  pull-requests: write
+
+concurrency:
+  group: teisenda-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: github.event_name == 'push'
+    runs-on: [self-hosted, teisenda-dev]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: npm ci
+      - run: npm run build
+      - name: Deploy to TEISENDA Hosting
+        uses: docker://ghcr.io/teisenda-gmbh/teisenda-deploy:1.0.0
+        env:
+          TEISENDA_WEBSITE: "630250102097"
+          TEISENDA_DIR: "dist"
+          TEISENDA_LANGUAGE: "de"
+          TEISENDA_ENVIRONMENT: "development"
+          GITHUB_TOKEN: ${{ github.token }}
+
+  cleanup:
+    if: github.event_name == 'delete' || github.event_name == 'pull_request'
+    runs-on: [self-hosted, teisenda-dev]
+    steps:
+      - name: Remove the previews of the branch
+        uses: docker://ghcr.io/teisenda-gmbh/teisenda-deploy:1.0.0
+        env:
+          TEISENDA_WEBSITE: "630250102097"
+          TEISENDA_COMMAND: cleanup
+          TEISENDA_LANGUAGE: "de"
+          TEISENDA_ENVIRONMENT: "development"
+          GITHUB_TOKEN: ${{ github.token }}
